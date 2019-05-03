@@ -11,10 +11,6 @@
 const char* ssid = "WIFISSID";
 const char* password = "PASSWORD";
 const char* hostName = "ESPP1Meter";
-const char* domoticzIP = "192.168.1.35";
-const int domoticzPort = 8090;
-const int domoticzGasIdx = 291;
-const int domoticzEneryIdx = 294;
 const char* serverEmoncms = "http://emoncms.org/";
 const char* AuthEmoncms = "AUTHCODE";
 char* EmonCMSnode = "ESP-P1";
@@ -45,12 +41,6 @@ char telegram[MAXLINELENGTH];
 SoftwareSerial mySerial(SERIAL_RX, -1, true, MAXLINELENGTH); // (RX, TX. inverted, buffer)
 
 unsigned int currentCRC=0;
-
-void SendToDomoLog(char* message)
-{
-  char url[512];
-  sprintf(url, "http://%s:%d/json.htm?type=command&param=addlogmessage&message=%s", domoticzIP, domoticzPort, message); 
-}
 
 void setup() {
   Serial.begin(115200);
@@ -206,65 +196,6 @@ void UpdateMindergas() {
   }
 }
 
-bool SendToDomo(int idx, int nValue, char* sValue)
-{
-  HTTPClient http;
-  bool retVal = false;
-  char url[255];
-  sprintf(url, "http://%s:%d/json.htm?type=command&param=udevice&idx=%d&nvalue=%d&svalue=%s", domoticzIP, domoticzPort, idx, nValue, sValue);
-  Serial.printf("[HTTP] GET... URL: %s\n",url);
-  http.begin(url); //HTTP
-  int httpCode = http.GET();
-  // httpCode will be negative on error
-  if (httpCode > 0)
-  { // HTTP header has been send and Server response header has been handled
-    Serial.printf("[HTTP] GET... code: %d\n", httpCode);
-
-    // file found at server
-    if (httpCode == HTTP_CODE_OK) {
-      String payload = http.getString();
-      retVal = true;
-    }
-  }
-  else
-  {
-    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-  }
-  http.end();
-  return retVal;
-}
-
-
-
-void UpdateGas()
-{
-  //sends over the gas setting to domoticz
-  if(strncmp(prevGAS, tGAS, strlen("150531200000S")) != 0)
-  { //timestamp gas has changed, so update gas.
-    char sValue[10];
-    sprintf(sValue, "%d", mGAS);
-    if(SendToDomo(domoticzGasIdx, 0, sValue))
-      strcpy(prevGAS, tGAS);
-  }
-}
-
-void UpdateElectricity()
-{
-  char sValue[255];
-  sprintf(sValue, "%d;%d;%d;%d;%d;%d", mEVLT, mEVHT, mEOLT, mEOHT, mEAV, mEAT);
-  SendToDomo(domoticzEneryIdx, 0, sValue);
-}
-
-
-bool isNumber(char* res, int len) {
-  for (int i = 0; i < len; i++) {
-    if (((res[i] < '0') || (res[i] > '9'))  && (res[i] != '.' && res[i] != 0)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 int FindCharInArrayRev(char array[], char c, int len) {
   for (int i = len - 1; i >= 0; i--) {
     if (array[i] == c) {
@@ -272,32 +203,6 @@ int FindCharInArrayRev(char array[], char c, int len) {
     }
   }
   return -1;
-}
-
-long getValidVal(long valNew, long valOld, long maxDiffer)
-{
-  //check if the incoming value is valid
-      if(valOld > 0 && ((valNew - valOld > maxDiffer) && (valOld - valNew > maxDiffer)))
-        return valOld;
-      return valNew;
-}
-
-long getValue(char* buffer, int maxlen) {
-  int s = FindCharInArrayRev(buffer, '(', maxlen - 2);
-  if (s < 8) return 0;
-  if (s > 32) s = 32;
-  int l = FindCharInArrayRev(buffer, '*', maxlen - 2) - s - 1;
-  if (l < 4) return 0;
-  if (l > 12) return 0;
-  char res[16];
-  memset(res, 0, sizeof(res));
-
-  if (strncpy(res, buffer + s + 1, l)) {
-    if (isNumber(res, l)) {
-      return (1000 * atof(res));
-    }
-  }
-  return 0;
 }
 
 bool decodeTelegram(int len) {
@@ -421,8 +326,6 @@ void readTelegram() {
       yield();
       if( decodeTelegram(len+1) ) {
         if (millis() - lastUpdate >= updateInterval) {
-          UpdateElectricity();
-          UpdateGas();
           UpdateEmoncms();
           UpdateMindergas();
         }
