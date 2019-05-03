@@ -15,8 +15,14 @@ const char* domoticzIP = "192.168.1.35";
 const int domoticzPort = 8090;
 const int domoticzGasIdx = 291;
 const int domoticzEneryIdx = 294;
+const char* serverEmoncms = "http://emoncms.org/";
+const char* AuthEmoncms = "AUTHCODE";
+char* EmonCMSnode = "ESP-P1";
 const bool outputOnSerial = true;
+unsigned long updateInterval = 59100; //milliseconds. once every minute
 //===Change values to here===
+
+unsigned long lastUpdate = -updateInterval; //process first telegram
 
 // Vars to store meter readings
 long mEVLT = 0; //Meter reading Electrics - consumption low tariff
@@ -30,7 +36,7 @@ char tGAS[14];  // time stamp gas
 char prevGAS[14];
 
 
-#define MAXLINELENGTH 128 // longest normal line is 47 char (+3 for \r\n\0)
+#define MAXLINELENGTH 1023 // sagemcom xs210 has long line lenghth
 char telegram[MAXLINELENGTH];
 
 #define SERIAL_RX     D5  // pin for SoftwareSerial RX
@@ -89,6 +95,58 @@ void setup() {
   Serial.println(WiFi.localIP());
 }
 
+bool SendToEmonCms(char* idx, int nValue, char* sValue)
+{
+  HTTPClient http;
+  bool retVal = false;
+  char url[255];
+  sprintf(url, "%s/input/post.json?node=%s&json={%s}&apikey=%s", serverEmoncms, idx, sValue, AuthEmoncms);
+  Serial.printf("[HTTP] GET... URL: %s\n", url);
+  http.begin(url); //HTTP
+  int httpCode = http.GET();
+  // httpCode will be negative on error
+  if (httpCode > 0)
+  { // HTTP header has been send and Server response header has been handled
+    Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+
+    // file found at server
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      retVal = true;
+    }
+  }
+  else
+  {
+    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
+  return retVal;
+}
+
+void UpdateEmoncms() {
+  if ( prevGAS[0] == '\0' ) {
+    // first update after boot, skip gas update
+    strcpy(prevGAS, tGAS);
+  }
+  char sValue[255];
+  Serial.println("Updating EmonCMS...");
+  Serial.print("prevGAS: ");
+  Serial.println(prevGAS);
+  Serial.print("tGas:    ");
+  Serial.println(tGAS);
+  if (strncmp(prevGAS, tGAS, strlen("150531200000S")) != 0)
+  { //timestamp gas has changed, so update gas.
+    Serial.println("gas changed");
+    sprintf(sValue, "ELVT:%d,EVHT:%d,EOLT:%d,EOHT:%d,EAV:%d,EAT:%d,GAS:%d", mEVLT, mEVHT, mEOLT, mEOHT, mEAV, mEAT, mGAS);
+  }
+  else
+  { // timestamp gas not changed
+    Serial.println("gas not changed");
+    sprintf(sValue, "ELVT:%d,EVHT:%d,EOLT:%d,EOHT:%d,EAV:%d,EAT:%d",        mEVLT, mEVHT, mEOLT, mEOHT, mEAV, mEAT);
+  }
+  if (SendToEmonCms(EmonCMSnode, 0, sValue))
+    strcpy(prevGAS, tGAS);
+}
 
 bool SendToDomo(int idx, int nValue, char* sValue)
 {
@@ -303,10 +361,12 @@ void readTelegram() {
       telegram[len] = '\n';
       telegram[len+1] = 0;
       yield();
-      if(decodeTelegram(len+1))
-      {
-         UpdateElectricity();
-         UpdateGas();
+      if( decodeTelegram(len+1) ) {
+        if (millis() - lastUpdate >= updateInterval) {
+          UpdateElectricity();
+          UpdateGas();
+          UpdateEmoncms();
+        }
       }
     } 
   }
