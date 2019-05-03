@@ -26,7 +26,8 @@ long mEOHT = 0; //Meter reading Electrics - return high tariff
 long mEAV = 0;  //Meter reading Electrics - Actual consumption
 long mEAT = 0;  //Meter reading Electrics - Actual return
 long mGAS = 0;    //Meter reading Gas
-long prevGAS = 0;
+char tGAS[14];  // time stamp gas
+char prevGAS[14];
 
 
 #define MAXLINELENGTH 128 // longest normal line is 47 char (+3 for \r\n\0)
@@ -122,12 +123,12 @@ bool SendToDomo(int idx, int nValue, char* sValue)
 void UpdateGas()
 {
   //sends over the gas setting to domoticz
-  if(prevGAS!=mGAS)
-  {
+  if(strncmp(prevGAS, tGAS, strlen("150531200000S")) != 0)
+  { //timestamp gas has changed, so update gas.
     char sValue[10];
     sprintf(sValue, "%d", mGAS);
     if(SendToDomo(domoticzGasIdx, 0, sValue))
-      prevGAS=mGAS;
+      strcpy(prevGAS, tGAS);
   }
 }
 
@@ -229,46 +230,67 @@ bool decodeTelegram(int len) {
     }
   }
 
-  long val =0;
-  long val2=0;
+  // temporary variables
+  long tl  = 0;
+  long tld = 0;
+
   // 1-0:1.8.1(000992.992*kWh)
   // 1-0:1.8.1 = Elektra verbruik laag tarief (DSMR v4.0)
-  if (strncmp(telegram, "1-0:1.8.1", strlen("1-0:1.8.1")) == 0) 
-    mEVLT =  getValue(telegram, len);
-  
+  if (sscanf(telegram, "1-0:1.8.1(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEVLT = tl * 1000 + tld;
+    Serial.print("Elektra - meterstand verbruik LAAG tarief (Wh): ");
+    Serial.println(mEVLT);
+  }
 
   // 1-0:1.8.2(000560.157*kWh)
   // 1-0:1.8.2 = Elektra verbruik hoog tarief (DSMR v4.0)
-  if (strncmp(telegram, "1-0:1.8.2", strlen("1-0:1.8.2")) == 0) 
-    mEVHT = getValue(telegram, len);
-    
+  if (sscanf(telegram, "1-0:1.8.2(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEVHT = tl * 1000 + tld;
+    Serial.print("Elektra - meterstand verbruik HOOG tarief (Wh): ");
+    Serial.println(mEVHT);
+  }
 
   // 1-0:2.8.1(000348.890*kWh)
   // 1-0:2.8.1 = Elektra opbrengst laag tarief (DSMR v4.0)
-  if (strncmp(telegram, "1-0:2.8.1", strlen("1-0:2.8.1")) == 0) 
-    mEOLT = getValue(telegram, len);
-   
+  if (sscanf(telegram, "1-0:2.8.1(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEOLT = tl * 1000 + tld;
+    Serial.print("Elektra - meterstand levering LAAG tarief (Wh): ");
+    Serial.println(mEOLT);
+  }
 
   // 1-0:2.8.2(000859.885*kWh)
   // 1-0:2.8.2 = Elektra opbrengst hoog tarief (DSMR v4.0)
-  if (strncmp(telegram, "1-0:2.8.2", strlen("1-0:2.8.2")) == 0) 
-    mEOHT = getValue(telegram, len);
-    
+  if (sscanf(telegram, "1-0:2.8.2(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEOHT = tl * 1000 + tld;
+    Serial.print("Elektra - meterstand levering HOOG tarief (Wh): ");
+    Serial.println(mEOHT);
+  }
 
   // 1-0:1.7.0(00.424*kW) Actueel verbruik
+  // 1-0:1.7.0 = Electricity consumption actual usage (DSMR v4.0)
+  if (sscanf(telegram, "1-0:1.7.0(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEAV = tl * 1000 + tld;
+    Serial.print("Elektra - Actueel verbruik (W): ");
+    Serial.println(mEAV);
+  }
+
   // 1-0:2.7.0(00.000*kW) Actuele teruglevering
-  // 1-0:1.7.x = Electricity consumption actual usage (DSMR v4.0)
-  if (strncmp(telegram, "1-0:1.7.0", strlen("1-0:1.7.0")) == 0) 
-    mEAV = getValue(telegram, len);
-    
-  if (strncmp(telegram, "1-0:2.7.0", strlen("1-0:2.7.0")) == 0)
-    mEAT = getValue(telegram, len);
-   
+  // 1-0:2.7.0 = Electricity consumption actual return (DSMR v4.0)
+  if (sscanf(telegram, "1-0:2.7.0(%ld.%ld%*s" , &tl, &tld) == 2 ) {
+    mEAT = tl * 1000 + tld;
+    Serial.print("Elektra - Actueel teruglevering (W): ");
+    Serial.println(mEAT);
+  }
 
   // 0-1:24.2.1(150531200000S)(00811.923*m3)
   // 0-1:24.2.1 = Gas (DSMR v4.0) on Kaifa MA105 meter
-  if (strncmp(telegram, "0-1:24.2.1", strlen("0-1:24.2.1")) == 0) 
-    mGAS = getValue(telegram, len);
+  if (sscanf(telegram, "0-1:24.2.1(%13s)(%ld.%ld%*s" , tGAS, &tl, &tld) == 3 ) {
+    mGAS = tl * 1000 + tld;
+    Serial.print("GAS- timestamp: ");
+    Serial.print(tGAS);
+    Serial.print("; GAS- Meterstand (l): ");
+    Serial.println(mGAS);
+  }
 
   return validCRCFound;
 }
