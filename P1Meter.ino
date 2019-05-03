@@ -1,4 +1,4 @@
-// #include <TimeLib.h>
+#include <TimeLib.h>  //required for date manipulation for mindergas. install Time by Margolis via Library Manager
 #include <SoftwareSerial.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -18,6 +18,8 @@ const int domoticzEneryIdx = 294;
 const char* serverEmoncms = "http://emoncms.org/";
 const char* AuthEmoncms = "AUTHCODE";
 char* EmonCMSnode = "ESP-P1";
+const char* serverMindergas = "http://www.mindergas.nl/api/gas_meter_readings";
+const char* AuthMindergas = "AUTHCODE";
 const bool outputOnSerial = true;
 unsigned long updateInterval = 59100; //milliseconds. once every minute
 //===Change values to here===
@@ -34,7 +36,7 @@ long mEAT = 0;  //Meter reading Electrics - Actual return
 long mGAS = 0;    //Meter reading Gas
 char tGAS[14];  // time stamp gas
 char prevGAS[14];
-
+char prevMindergas[14];
 
 #define MAXLINELENGTH 1023 // sagemcom xs210 has long line lenghth
 char telegram[MAXLINELENGTH];
@@ -146,6 +148,62 @@ void UpdateEmoncms() {
   }
   if (SendToEmonCms(EmonCMSnode, 0, sValue))
     strcpy(prevGAS, tGAS);
+}
+
+bool SendToMindergas(char* timestamp, char* value) {
+  HTTPClient http;
+  bool retVal = false;
+  char url[255];
+  char data[100];
+  sprintf(url, "%s", serverMindergas);
+  sprintf(data, "{\"date\": \"%s\", \"reading_l\": %s}", timestamp, value);
+
+  Serial.printf("[HTTP] POST... URL: %s\nDAT: %s\n", url, data);
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("AUTH-TOKEN", AuthMindergas);
+  int httpCode = http.POST(data);
+  // httpCode will be negative on error
+  if (httpCode > 0)
+  { // HTTP header has been send and Server response header has been handled
+    Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+    // file found at server
+    if (httpCode == HTTP_CODE_CREATED) {
+      String payload = http.getString();
+      retVal = true;
+    }
+  }
+  else
+  {
+    Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
+  return retVal;
+}
+
+void UpdateMindergas() {
+  if ( prevMindergas[0] == '\0' ) {
+    // first update after boot, skip gas update
+    strcpy(prevMindergas, tGAS);
+  }
+  if (strncmp(prevMindergas, tGAS, strlen("170403")))
+  { // new day, upload to mindergas
+    Serial.println("Updating Mindergas...");
+    char timestamp[11];
+    char sValue[10];
+    int Year, Month, Day;
+
+    sprintf(sValue, "%d", mGAS);
+    // create timestamp, yesterday
+    sscanf(tGAS, "%2d%2d%2d%*s", &Year, &Month, &Day);
+    //setTime(Hour, Minute, Second, Day, Month, Year);
+    setTime(23, 0, 0, Day, Month, Year);
+    time_t gister = now() - 86400;
+    sprintf(timestamp, "%04d-%02d-%02d", year(gister), month(gister), day(gister));
+
+    if (SendToMindergas(timestamp, sValue))
+      strcpy(prevMindergas, tGAS);
+  }
 }
 
 bool SendToDomo(int idx, int nValue, char* sValue)
@@ -366,6 +424,7 @@ void readTelegram() {
           UpdateElectricity();
           UpdateGas();
           UpdateEmoncms();
+          UpdateMindergas();
         }
       }
     } 
