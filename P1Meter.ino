@@ -6,6 +6,7 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include "CRC16.h"
+#include <TelnetPrint.h>  //https://github.com/jandrassy/TelnetStream
 
 //===Change values from here===
 const char* ssid = "WIFISSID";
@@ -85,6 +86,9 @@ void setup() {
   Serial.println("Ready");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+  
+  //TelnetPrint = NetServer(2323); // uncomment to change port
+  TelnetPrint.begin();
 }
 
 bool SendToEmonCms(char* idx, int nValue, char* sValue)
@@ -93,13 +97,15 @@ bool SendToEmonCms(char* idx, int nValue, char* sValue)
   bool retVal = false;
   char url[255];
   sprintf(url, "%s/input/post.json?node=%s&json={%s}&apikey=%s", serverEmoncms, idx, sValue, AuthEmoncms);
-  Serial.printf("[HTTP] GET... URL: %s\n", url);
+  TelnetPrint.print("[HTTP] GET... URL: ");
+  TelnetPrint.println(url);
   http.begin(url); //HTTP
   int httpCode = http.GET();
   // httpCode will be negative on error
   if (httpCode > 0)
   { // HTTP header has been send and Server response header has been handled
-    Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+    TelnetPrint.print("[HTTP] GET... code: ");
+    TelnetPrint.println(httpCode);
 
     // file found at server
     if (httpCode == HTTP_CODE_OK) {
@@ -109,7 +115,8 @@ bool SendToEmonCms(char* idx, int nValue, char* sValue)
   }
   else
   {
-    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    TelnetPrint.println("[HTTP] GET... failed, error: ");
+    TelnetPrint.println(http.errorToString(httpCode).c_str());
   }
   http.end();
   return retVal;
@@ -121,19 +128,19 @@ void UpdateEmoncms() {
     strcpy(prevGAS, tGAS);
   }
   char sValue[255];
-  Serial.println("Updating EmonCMS...");
-  Serial.print("prevGAS: ");
-  Serial.println(prevGAS);
-  Serial.print("tGas:    ");
-  Serial.println(tGAS);
+  TelnetPrint.println("Updating EmonCMS...");
+  TelnetPrint.print("prevGAS: ");
+  TelnetPrint.println(prevGAS);
+  TelnetPrint.print("tGas:    ");
+  TelnetPrint.println(tGAS);
   if (strncmp(prevGAS, tGAS, strlen("150531200000S")) != 0)
   { //timestamp gas has changed, so update gas.
-    Serial.println("gas changed");
+    TelnetPrint.println("gas changed");
     sprintf(sValue, "ELVT:%d,EVHT:%d,EOLT:%d,EOHT:%d,EAV:%d,EAT:%d,GAS:%d", mEVLT, mEVHT, mEOLT, mEOHT, mEAV, mEAT, mGAS);
   }
   else
   { // timestamp gas not changed
-    Serial.println("gas not changed");
+    TelnetPrint.println("gas not changed");
     sprintf(sValue, "ELVT:%d,EVHT:%d,EOLT:%d,EOHT:%d,EAV:%d,EAT:%d",        mEVLT, mEVHT, mEOLT, mEOHT, mEAV, mEAT);
   }
   if (SendToEmonCms(EmonCMSnode, 0, sValue))
@@ -148,7 +155,10 @@ bool SendToMindergas(char* timestamp, char* value) {
   sprintf(url, "%s", serverMindergas);
   sprintf(data, "{\"date\": \"%s\", \"reading_l\": %s}", timestamp, value);
 
-  Serial.printf("[HTTP] POST... URL: %s\nDAT: %s\n", url, data);
+  TelnetPrint.print("[HTTP] POST... URL: ");
+  TelnetPrint.println(url);
+  TelnetPrint.print("DAT: ");
+  TelnetPrint.println(data);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("AUTH-TOKEN", AuthMindergas);
@@ -156,7 +166,8 @@ bool SendToMindergas(char* timestamp, char* value) {
   // httpCode will be negative on error
   if (httpCode > 0)
   { // HTTP header has been send and Server response header has been handled
-    Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+    TelnetPrint.print("[HTTP] POST... code: ");
+    TelnetPrint.println(httpCode);
     // file found at server
     if (httpCode == HTTP_CODE_CREATED) {
       String payload = http.getString();
@@ -165,7 +176,8 @@ bool SendToMindergas(char* timestamp, char* value) {
   }
   else
   {
-    Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    TelnetPrint.println("[HTTP] POST... failed, error: ");
+    TelnetPrint.println(http.errorToString(httpCode).c_str());
   }
   http.end();
   return retVal;
@@ -178,7 +190,7 @@ void UpdateMindergas() {
   }
   if (strncmp(prevMindergas, tGAS, strlen("170403")))
   { // new day, upload to mindergas
-    Serial.println("Updating Mindergas...");
+    TelnetPrint.println("updating mindergas...");
     char timestamp[11];
     char sValue[10];
     int Year, Month, Day;
@@ -217,10 +229,8 @@ bool decodeTelegram(int len) {
     if(outputOnSerial)
     {
       for(int cnt=startChar; cnt<len-startChar;cnt++)
-        Serial.print(telegram[cnt]);
-    }    
-    //Serial.println("Start found!");
-    
+        TelnetPrint.print(telegram[cnt]);
+    }        
   }
   else if(endChar>=0)
   {
@@ -232,13 +242,13 @@ bool decodeTelegram(int len) {
     if(outputOnSerial)
     {
       for(int cnt=0; cnt<len;cnt++)
-        Serial.print(telegram[cnt]);
+        TelnetPrint.print(telegram[cnt]);
     }    
     validCRCFound = (strtol(messageCRC, NULL, 16) == currentCRC);
     if(validCRCFound)
-      Serial.println("\nVALID CRC FOUND!"); 
+      TelnetPrint.println("\nVALID CRC FOUND!\n");
     else
-      Serial.println("\n===INVALID CRC FOUND!===");
+      TelnetPrint.println("\n===INVALID CRC FOUND!===\n");
     currentCRC = 0;
   }
   else
@@ -247,7 +257,7 @@ bool decodeTelegram(int len) {
     if(outputOnSerial)
     {
       for(int cnt=0; cnt<len;cnt++)
-        Serial.print(telegram[cnt]);
+        TelnetPrint.print(telegram[cnt]);
     }
   }
 
@@ -259,58 +269,58 @@ bool decodeTelegram(int len) {
   // 1-0:1.8.1 = Elektra verbruik laag tarief (DSMR v4.0)
   if (sscanf(telegram, "1-0:1.8.1(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEVLT = tl * 1000 + tld;
-    Serial.print("Elektra - meterstand verbruik LAAG tarief (Wh): ");
-    Serial.println(mEVLT);
+    TelnetPrint.print("Elektra - meterstand verbruik LAAG tarief (Wh): ");
+    TelnetPrint.println(mEVLT);
   }
 
   // 1-0:1.8.2(000560.157*kWh)
   // 1-0:1.8.2 = Elektra verbruik hoog tarief (DSMR v4.0)
   if (sscanf(telegram, "1-0:1.8.2(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEVHT = tl * 1000 + tld;
-    Serial.print("Elektra - meterstand verbruik HOOG tarief (Wh): ");
-    Serial.println(mEVHT);
+    TelnetPrint.print("Elektra - meterstand verbruik HOOG tarief (Wh): ");
+    TelnetPrint.println(mEVHT);
   }
 
   // 1-0:2.8.1(000348.890*kWh)
   // 1-0:2.8.1 = Elektra opbrengst laag tarief (DSMR v4.0)
   if (sscanf(telegram, "1-0:2.8.1(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEOLT = tl * 1000 + tld;
-    Serial.print("Elektra - meterstand levering LAAG tarief (Wh): ");
-    Serial.println(mEOLT);
+    TelnetPrint.print("Elektra - meterstand levering LAAG tarief (Wh): ");
+    TelnetPrint.println(mEOLT);
   }
 
   // 1-0:2.8.2(000859.885*kWh)
   // 1-0:2.8.2 = Elektra opbrengst hoog tarief (DSMR v4.0)
   if (sscanf(telegram, "1-0:2.8.2(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEOHT = tl * 1000 + tld;
-    Serial.print("Elektra - meterstand levering HOOG tarief (Wh): ");
-    Serial.println(mEOHT);
+    TelnetPrint.print("Elektra - meterstand levering HOOG tarief (Wh): ");
+    TelnetPrint.println(mEOHT);
   }
 
   // 1-0:1.7.0(00.424*kW) Actueel verbruik
   // 1-0:1.7.0 = Electricity consumption actual usage (DSMR v4.0)
   if (sscanf(telegram, "1-0:1.7.0(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEAV = tl * 1000 + tld;
-    Serial.print("Elektra - Actueel verbruik (W): ");
-    Serial.println(mEAV);
+    TelnetPrint.print("Elektra - Actueel verbruik (W): ");
+    TelnetPrint.println(mEAV);
   }
 
   // 1-0:2.7.0(00.000*kW) Actuele teruglevering
   // 1-0:2.7.0 = Electricity consumption actual return (DSMR v4.0)
   if (sscanf(telegram, "1-0:2.7.0(%ld.%ld%*s" , &tl, &tld) == 2 ) {
     mEAT = tl * 1000 + tld;
-    Serial.print("Elektra - Actueel teruglevering (W): ");
-    Serial.println(mEAT);
+    TelnetPrint.print("Elektra - Actueel teruglevering (W): ");
+    TelnetPrint.println(mEAT);
   }
 
   // 0-1:24.2.1(150531200000S)(00811.923*m3)
   // 0-1:24.2.1 = Gas (DSMR v4.0) on Kaifa MA105 meter
   if (sscanf(telegram, "0-1:24.2.1(%13s)(%ld.%ld%*s" , tGAS, &tl, &tld) == 3 ) {
     mGAS = tl * 1000 + tld;
-    Serial.print("GAS- timestamp: ");
-    Serial.print(tGAS);
-    Serial.print("; GAS- Meterstand (l): ");
-    Serial.println(mGAS);
+    TelnetPrint.print("GAS- timestamp: ");
+    TelnetPrint.print(tGAS);
+    TelnetPrint.print("; GAS- Meterstand (l): ");
+    TelnetPrint.println(mGAS);
   }
 
   return validCRCFound;
@@ -324,6 +334,7 @@ void readTelegram() {
       telegram[len] = '\n';
       telegram[len+1] = 0;
       yield();
+      if( decodeTelegram(len+1) ) {
       if( decodeTelegram(len+1) ) {
         if (millis() - lastUpdate >= updateInterval) {
           UpdateEmoncms();
