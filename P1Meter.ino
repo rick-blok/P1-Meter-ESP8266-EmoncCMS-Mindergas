@@ -35,11 +35,8 @@ char tGAS[14];  // time stamp gas
 char prevGAS[14];
 char prevMindergas[14];
 
-#define MAXLINELENGTH 1023 // sagemcom xs210 has long line lenghth
+#define MAXLINELENGTH 1023 // sagemcom xs210 has long line length
 char telegram[MAXLINELENGTH];
-
-#define SERIAL_RX     D5  // pin for SoftwareSerial RX
-SoftwareSerial mySerial(SERIAL_RX, -1, true, MAXLINELENGTH); // (RX, TX. inverted, buffer)
 
 unsigned int currentCRC=0;
 
@@ -54,7 +51,6 @@ void setup() {
     delay(5000);
     ESP.restart();
   }
-  mySerial.begin(115200);
 
   // Port defaults to 8266
   // ArduinoOTA.setPort(8266);
@@ -89,6 +85,13 @@ void setup() {
   
   //TelnetPrint = NetServer(2323); // uncomment to change port
   TelnetPrint.begin();
+  Serial.println("Swapping serial port to Smart Meter, debug output will continue on telnet");
+  Serial.end();
+  delay(100);
+  
+  Serial.begin(115200, SERIAL_8N1, SERIAL_RX_ONLY, 255, true);  //https://github.com/esp8266/Arduino/pull/6816/
+  Serial.swap();  //swapping RX to GPIO13 = D7
+  // GPIO13 has pullup enabled with uart https://github.com/esp8266/Arduino/blob/master/cores/esp8266/core_esp8266_wiring_digital.cpp
 }
 
 bool SendToEmonCms(char* idx, int nValue, char* sValue)
@@ -327,10 +330,10 @@ bool decodeTelegram(int len) {
 }
 
 void readTelegram() {
-  if (mySerial.available()) {
+  if (Serial.available()) {
     memset(telegram, 0, sizeof(telegram));
-    while (mySerial.available()) {
-      int len = mySerial.readBytesUntil('\n', telegram, MAXLINELENGTH);
+    while (Serial.available()) {
+      int len = Serial.readBytesUntil('\n', telegram, MAXLINELENGTH);
       telegram[len] = '\n';
       telegram[len+1] = 0;
       yield();
