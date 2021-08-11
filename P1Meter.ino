@@ -1,5 +1,4 @@
 #include <TimeLib.h>  //required for date manipulation for mindergas. install Time by Margolis via Library Manager
-#include <SoftwareSerial.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPClient.h>
